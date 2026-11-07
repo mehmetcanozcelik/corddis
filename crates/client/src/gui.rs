@@ -249,6 +249,7 @@ impl App {
                 ui.label("Arkadaşından aldığın davet bağlantısını yapıştır:");
                 ui.add_space(8.0);
                 let r = ui.add(TextEdit::singleline(text).hint_text("corddis://...").desired_width(480.0));
+                edit_menu(&r);
                 submit |= r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                 ui.add_space(10.0);
                 submit |= ui.add(egui::Button::new("Bağlan").min_size(Vec2::new(120.0, 30.0))).clicked();
@@ -333,6 +334,7 @@ impl App {
                     online,
                     TextEdit::singleline(draft).hint_text(hint).desired_width(f32::INFINITY).char_limit(2000),
                 );
+                edit_menu(&r);
                 if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     let text = draft.trim().to_string();
                     if !text.is_empty() {
@@ -697,6 +699,24 @@ fn message_text(ui: &mut egui::Ui, text: &str) {
                 ui.hyperlink(word);
             } else {
                 ui.label(word);
+            }
+        }
+    });
+}
+
+/// Metin kutusuna sağ tık menüsü (egui'nin kendi menüsü yok). Komutlar odaktaki kutuya gider,
+/// bu yüzden önce kutuya odaklanılır.
+fn edit_menu(r: &egui::Response) {
+    r.context_menu(|ui| {
+        for (label, cmd) in [
+            ("Yapıştır", egui::ViewportCommand::RequestPaste),
+            ("Kopyala", egui::ViewportCommand::RequestCopy),
+            ("Kes", egui::ViewportCommand::RequestCut),
+        ] {
+            if ui.button(label).clicked() {
+                r.request_focus();
+                ui.ctx().send_viewport_cmd(cmd);
+                ui.close();
             }
         }
     });
