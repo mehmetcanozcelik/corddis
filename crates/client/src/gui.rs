@@ -16,10 +16,12 @@ use corddis_proto::invite::Invite;
 use eframe::egui::{self, Color32, Key, RichText, Sense, Stroke, TextEdit, Vec2};
 
 use crate::audio::device;
+use crate::audio::sounds::{self, Sound};
 use crate::config::Config;
 use crate::hotkey::{self, Hotkey};
 use crate::model::{Conn, Model, HISTORY_PAGE};
 use crate::netloop::NetHandle;
+use crate::tray::{self, Tray, TrayAction};
 use crate::voice::{VoiceConfig, VoiceEngine, VoiceStatus};
 
 const GREEN: Color32 = Color32::from_rgb(67, 181, 129);
@@ -38,15 +40,27 @@ const NAME_COLORS: [Color32; 6] = [
 const GROUP_SECS: i64 = 300;
 const METER_MIN_DB: f32 = -70.0;
 
+/// Pencere, tepsi ve exe ikonu (eframe'in varsayılan ikonu, MIT/Apache-2.0).
+const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+const TRAY_ICON_SIZE: u32 = 32;
+
 pub fn run() -> eframe::Result {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Corddis")
-            .with_inner_size([980.0, 640.0])
-            .with_min_inner_size([680.0, 420.0]),
-        ..Default::default()
-    };
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Corddis")
+        .with_inner_size([980.0, 640.0])
+        .with_min_inner_size([680.0, 420.0]);
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(ICON_PNG) {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native("Corddis", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+}
+
+fn make_tray(ctx: &egui::Context) -> Option<Tray> {
+    let icon = eframe::icon_data::from_png_bytes(ICON_PNG).ok()?;
+    let rgba = tray::downscale(&icon.rgba, icon.width, TRAY_ICON_SIZE);
+    let c = ctx.clone();
+    Tray::new(rgba, TRAY_ICON_SIZE, move || c.request_repaint())
 }
 
 /// egui'nin yerleşik fontunda simge/emoji yok; Windows'un simge fontunu yedek olarak ekle
@@ -88,6 +102,11 @@ struct App {
     deafened: bool,
     settings: Option<DeviceLists>,
     hotkey: Hotkey,
+    tray: Option<Tray>,
+    /// Tepsiden "Çıkış" seçildi: pencere kapatma isteği artık tepsiye indirmez, kapatır.
+    quitting: bool,
+    /// Bildirim sesi için: bir önceki karede bulunduğum sesli kanal ve oradakiler.
+    last_voice: Option<(ChannelId, Vec<UserId>)>,
 }
 
 /// Çizim sırasında toplanan, çizimden sonra uygulanan kullanıcı eylemleri.
@@ -112,6 +131,9 @@ impl App {
         let hk_ctx = ctx.clone();
         let mut app = Self {
             hotkey: Hotkey::start(move || hk_ctx.request_repaint()),
+            tray: make_tray(&ctx),
+            quitting: false,
+            last_voice: None,
             ctx,
             cfg: Config::load(),
             screen: Screen::Invite { text: String::new(), error: None },
@@ -153,7 +175,18 @@ impl App {
         }
     }
 
+    fn sound(&self, s: Sound) {
+        if self.cfg.sounds {
+            sounds::play(s, self.cfg.output.clone());
+        }
+    }
+
     fn push_state(&mut self) {
+        let off = self.muted || self.deafened;
+        self.sound(if off { Sound::Mute } else { Sound::Unmute });
+        if let Some(t) = &self.tray {
+            t.set_muted(off);
+        }
         if let Some(e) = &self.engine {
             e.set_muted(self.muted);
             e.set_deafened(self.deafened);
@@ -222,11 +255,70 @@ impl App {
     }
 }
 
+impl App {
+    fn show_window(&self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    /// Kanaldaki değişikliklere göre giriş/çıkış sesi çalar.
+    fn voice_sounds(&mut self, m: &Model) {
+        let now = m.my_voice().map(|c| (c, m.voice.get(&c).cloned().unwrap_or_default()));
+        let sound = match (&self.last_voice, &now) {
+            (None, Some(_)) => Some(Sound::Join),
+            (Some(_), None) => Some(Sound::Leave),
+            (Some((c0, before)), Some((c1, after))) if c0 == c1 => {
+                if after.iter().any(|u| !before.contains(u)) {
+                    Some(Sound::Join)
+                } else if before.iter().any(|u| !after.contains(u)) {
+                    Some(Sound::Leave)
+                } else {
+                    None
+                }
+            }
+            (Some(_), Some(_)) => Some(Sound::Join), // başka kanala geçti
+            (None, None) => None,
+        };
+        if let Some(s) = sound {
+            self.sound(s);
+        }
+        self.last_voice = now;
+    }
+}
+
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    /// Pencere tepsideyken (gizliyken) de çalışır: kısayol, tepsi menüsü, ses motoru, bildirim sesleri.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.hotkey.take() % 2 == 1 {
             self.toggle_mute();
         }
+        let actions = self.tray.as_ref().map(|t| t.poll()).unwrap_or_default();
+        for a in actions {
+            match a {
+                TrayAction::Show => self.show_window(ctx),
+                TrayAction::ToggleMute => self.toggle_mute(),
+                TrayAction::Quit => {
+                    self.quitting = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+        // Kapatma düğmesi: tepsi varsa uygulamayı kapatma, tepsiye indir (sesli kanaldan düşme).
+        if ctx.input(|i| i.viewport().close_requested()) && self.tray.is_some() && !self.quitting {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+        if let Some(model) = self.net.as_ref().map(|n| n.model.clone()) {
+            let m = model.lock().unwrap_or_else(|p| p.into_inner());
+            if m.conn != Conn::BadInvite {
+                self.sync_engine(&m);
+                self.voice_sounds(&m);
+            }
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if matches!(self.screen, Screen::Invite { .. }) {
             self.invite_screen(ui);
         } else {
@@ -302,7 +394,6 @@ impl App {
             return;
         }
 
-        self.sync_engine(&m);
         let status = self.engine.as_ref().map(|e| e.status());
         let mut actions = Vec::new();
         let ctx = ui.ctx().clone();
@@ -310,6 +401,10 @@ impl App {
         egui::Panel::left("kanallar").exact_size(250.0).resizable(false).show(ui, |ui| {
             egui::Panel::bottom("ben").show(ui, |ui| {
                 me_panel(ui, &m, status.as_ref(), self.muted, self.deafened, self.engine_error.as_deref(), &mut actions);
+            });
+            egui::Panel::bottom("not").show_separator_line(false).show(ui, |ui| {
+                ui.add_space(2.0);
+                ui.label(RichText::new("Yusuf'un g*tüne girsin.").small().italics().color(GRAY));
             });
             channel_list(ui, &m, status.as_ref(), self.muted, &self.cfg.volumes, &mut actions);
         });
@@ -446,6 +541,11 @@ impl App {
                     .add(egui::Slider::new(&mut cfg.vad_min_db, METER_MIN_DB..=-20.0).text("eşik (dB)").step_by(1.0))
                     .changed();
                 capture_changed |= ui.checkbox(&mut cfg.denoise, "Gürültü engelleme (klavye, fan, oda sesi)").changed();
+                capture_changed |= ui.checkbox(&mut cfg.sounds, "Bildirim sesleri (giriş, çıkış, mikrofon)").changed();
+                capture_changed |= ui
+                    .checkbox(&mut cfg.agc, "Otomatik ses seviyesi (kısık mikrofonu yükseltir)")
+                    .on_hover_text("Seni karşı tarafa hep aynı yükseklikte duyurur. Kapatırsan Windows mikrofon seviyesi aynen gider.")
+                    .changed();
 
                 ui.separator();
                 ui.label(RichText::new("Kısayol").strong());
@@ -471,7 +571,7 @@ impl App {
         if capture_changed {
             cfg.save();
             if let Some(e) = &self.engine {
-                e.set_capture(cfg.vad_prob, cfg.vad_min_db, cfg.denoise);
+                e.set_capture(cfg.vad_prob, cfg.vad_min_db, cfg.denoise, cfg.agc);
             }
         }
         if !open {
@@ -580,7 +680,7 @@ fn channel_list(
                         r.context_menu(|ui| {
                             let mut pct = volumes.get(&u.name).copied().unwrap_or(1.0) * 100.0;
                             ui.label(format!("{} ses düzeyi", u.name));
-                            if ui.add(egui::Slider::new(&mut pct, 0.0..=200.0).suffix("%").step_by(5.0)).changed() {
+                            if ui.add(egui::Slider::new(&mut pct, 0.0..=crate::audio::mixer::MAX_VOLUME * 100.0).suffix("%").step_by(5.0)).changed() {
                                 actions.push(Action::SetVolume(uid, u.name.clone(), pct / 100.0));
                             }
                         });

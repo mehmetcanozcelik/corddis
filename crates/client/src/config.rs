@@ -22,7 +22,11 @@ pub struct Config {
     /// Bu seviyenin altındaki ses konuşma sayılmaz (dBFS). Düşük = daha hassas.
     pub vad_min_db: f32,
     pub vad_prob: f32,
-    /// Kişi başına ses düzeyi (kullanıcı adı → 0.0–2.0).
+    /// Otomatik ses seviyesi (kısık mikrofonu yükseltir).
+    pub agc: bool,
+    /// Kanala giriş/çıkış ve mikrofon aç/kapat sesleri.
+    pub sounds: bool,
+    /// Kişi başına ses düzeyi (kullanıcı adı → 0.0–3.0).
     pub volumes: HashMap<String, f32>,
 }
 
@@ -36,6 +40,8 @@ impl Default for Config {
             denoise: c.denoise,
             vad_min_db: c.vad_min_db,
             vad_prob: c.vad_prob,
+            agc: c.agc,
+            sounds: true,
             volumes: HashMap::new(),
         }
     }
@@ -92,6 +98,7 @@ impl Config {
                 denoise: self.denoise,
                 vad_prob: self.vad_prob,
                 vad_min_db: self.vad_min_db,
+                agc: self.agc,
                 ..CaptureSettings::default()
             },
         }

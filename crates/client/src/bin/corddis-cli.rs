@@ -15,6 +15,7 @@ Ses seçenekleri (loopback ve chat):
   --input <ad>          Mikrofon (adın bir parçası yeterli; varsayılan: sistem varsayılanı)
   --output <ad>         Kulaklık/hoparlör (varsayılan: sistem varsayılanı)
   --no-denoise          Gürültü engellemeyi kapat (ses algılama yine çalışır)
+  --no-agc              Otomatik ses seviyesini kapat
   --threshold <0..1>    Ses algılama hassasiyeti, konuşma olasılığı eşiği (varsayılan 0.5)
   --min-db <dBFS>       Bu seviyenin altındaki ses konuşma sayılmaz (varsayılan -50)
   --bitrate <bps>       Opus bitrate (varsayılan 32000)
@@ -82,6 +83,7 @@ fn parse_options(args: Vec<String>, a: &mut AudioOptions, mut lo: Option<&mut lo
             ("--input", _) => a.input = Some(val()?),
             ("--output", _) => a.output = Some(val()?),
             ("--no-denoise", _) => a.capture.denoise = false,
+            ("--no-agc", _) => a.capture.agc = false,
             ("--threshold", _) => a.capture.vad_prob = val()?.parse().context("--threshold")?,
             ("--min-db", _) => a.capture.vad_min_db = val()?.parse().context("--min-db")?,
             ("--bitrate", _) => a.capture.bitrate = val()?.parse().context("--bitrate")?,

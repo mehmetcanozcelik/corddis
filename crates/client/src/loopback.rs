@@ -204,12 +204,14 @@ fn process(
             let wire = st.payload_bytes + st.frames_sent * per_pkt;
             let avg_us = |ns: u128, n: u64| if n == 0 { 0.0 } else { ns as f64 / n as f64 / 1000.0 };
             println!(
-                "[durum] VAD açık %{:>3.0} | tepe {:>4.0} dBFS | upload {:>4.1} kbps ({} pkt) | \
+                "[durum] VAD açık %{:>3.0} | mikrofon tepe {:>4.0} dBFS → gönderilen {:>4.0} dBFS (AGC {:+.0} dB) | upload {:>4.1} kbps ({} pkt) | \
                  kayıp {} → FEC {} / PLC {} | jitter {} çerçeve | çalma tamponu {:>3.0} ms | \
                  işlem: rnnoise {:.0}µs enc {:.0}µs dec {:.0}µs | CPU %{:.2} | RAM {:.1} MB (private {:.1}) | \
                  taşma {} boşalma {}",
                 st.subframes_open as f64 * 100.0 / st.subframes.max(1) as f64,
                 st.peak_db,
+                st.sent_level_db,
+                st.agc_gain_db,
                 wire as f64 * 8.0 / secs / 1000.0,
                 st.frames_sent,
                 net.dropped,

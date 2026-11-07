@@ -64,6 +64,7 @@ struct Shared {
     vad_prob: AtomicU32,
     vad_min_db: AtomicU32,
     denoise: AtomicBool,
+    agc: AtomicBool,
     settings_gen: AtomicU32,
     /// Son 10 ms'nin mikrofon seviyesi (f32 bitleri, dBFS).
     level_db: AtomicU32,
@@ -112,6 +113,7 @@ impl VoiceEngine {
             vad_prob: AtomicU32::new(cfg.capture.vad_prob.to_bits()),
             vad_min_db: AtomicU32::new(cfg.capture.vad_min_db.to_bits()),
             denoise: AtomicBool::new(cfg.capture.denoise),
+            agc: AtomicBool::new(cfg.capture.agc),
             level_db: AtomicU32::new((-100f32).to_bits()),
             ..Default::default()
         });
@@ -175,11 +177,12 @@ impl VoiceEngine {
     }
 
     /// Ses algılama ve gürültü engelleme ayarlarını motoru durdurmadan değiştirir.
-    pub fn set_capture(&self, vad_prob: f32, vad_min_db: f32, denoise: bool) {
+    pub fn set_capture(&self, vad_prob: f32, vad_min_db: f32, denoise: bool, agc: bool) {
         let s = &self.shared;
         s.vad_prob.store(vad_prob.to_bits(), Ordering::Relaxed);
         s.vad_min_db.store(vad_min_db.to_bits(), Ordering::Relaxed);
         s.denoise.store(denoise, Ordering::Relaxed);
+        s.agc.store(agc, Ordering::Relaxed);
         s.settings_gen.fetch_add(1, Ordering::Release);
     }
 
@@ -282,6 +285,7 @@ fn send_loop(
                 f32::from_bits(shared.vad_min_db.load(Ordering::Relaxed)),
             );
             capture.set_denoise(shared.denoise.load(Ordering::Relaxed));
+            capture.set_agc(shared.agc.load(Ordering::Relaxed));
         }
         let muted = shared.muted.load(Ordering::Relaxed) || shared.deafened.load(Ordering::Relaxed);
         capture.process(&raw[..n], muted, |ev| {

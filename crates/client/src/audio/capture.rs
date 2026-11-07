@@ -9,6 +9,7 @@ use anyhow::Result;
 use corddis_proto::audio::{FRAME_SAMPLES, SAMPLE_RATE, SUBFRAME_SAMPLES};
 use nnnoiseless::DenoiseState;
 
+use super::agc::Agc;
 use super::codec::Encoder;
 use super::resample::Resampler;
 use super::vad::{rms_dbfs, VadGate};
@@ -22,11 +23,19 @@ pub struct CaptureSettings {
     pub vad_prob: f32,
     pub vad_min_db: f32,
     pub bitrate: i32,
+    /// Otomatik ses seviyesi: kısık mikrofonu hedef seviyeye yükseltir.
+    pub agc: bool,
 }
 
 impl Default for CaptureSettings {
     fn default() -> Self {
-        Self { denoise: true, vad_prob: 0.5, vad_min_db: -50.0, bitrate: corddis_proto::audio::DEFAULT_BITRATE }
+        Self {
+            denoise: true,
+            vad_prob: 0.5,
+            vad_min_db: -50.0,
+            bitrate: corddis_proto::audio::DEFAULT_BITRATE,
+            agc: true,
+        }
     }
 }
 
@@ -50,16 +59,22 @@ pub struct CaptureStats {
     pub enc_ns: u128,
     pub frames_sent: u64,
     pub payload_bytes: u64,
+    /// Gönderilen (AGC sonrası) konuşmanın en yüksek 10 ms seviyesi.
+    pub sent_level_db: f32,
+    /// AGC kazancı (son değer).
+    pub agc_gain_db: f32,
 }
 
 impl Default for CaptureStats {
     fn default() -> Self {
-        Self { subframes: 0, subframes_open: 0, peak_db: -100.0, denoise_ns: 0, enc_ns: 0, frames_sent: 0, payload_bytes: 0 }
+        Self { subframes: 0, subframes_open: 0, peak_db: -100.0, denoise_ns: 0, enc_ns: 0, frames_sent: 0, payload_bytes: 0, sent_level_db: -100.0, agc_gain_db: 0.0 }
     }
 }
 
 pub struct CaptureProcessor {
     denoise_enabled: bool,
+    agc_enabled: bool,
+    agc: Agc,
     denoise: Box<DenoiseState<'static>>,
     gate: VadGate,
     enc: Encoder,
@@ -79,6 +94,8 @@ impl CaptureProcessor {
     pub fn new(in_rate: u32, s: &CaptureSettings) -> Result<Self> {
         Ok(Self {
             denoise_enabled: s.denoise,
+            agc_enabled: s.agc,
+            agc: Agc::default(),
             denoise: DenoiseState::new(),
             gate: VadGate::new(s.vad_prob, s.vad_min_db, VAD_HANGOVER_SUBFRAMES),
             enc: Encoder::new(s.bitrate)?,
@@ -114,8 +131,14 @@ impl CaptureProcessor {
         self.denoise_enabled = on;
     }
 
+    pub fn set_agc(&mut self, on: bool) {
+        self.agc_enabled = on;
+    }
+
     pub fn take_stats(&mut self) -> CaptureStats {
-        std::mem::take(&mut self.stats)
+        let mut s = std::mem::take(&mut self.stats);
+        s.agc_gain_db = self.agc.gain_db();
+        s
     }
 
     /// Cihazdan gelen mono örnekleri işler. Mute'tayken hiçbir işlem yapılmaz (CPU ~0);
@@ -161,6 +184,12 @@ impl CaptureProcessor {
                 }
             } else {
                 dst.copy_from_slice(chunk);
+            }
+            if self.agc_enabled {
+                self.agc.process(dst, open);
+            }
+            if open {
+                self.stats.sent_level_db = self.stats.sent_level_db.max(super::agc::rms_db(dst));
             }
             self.frame_len += SUBFRAME_SAMPLES;
             self.frame_active |= open;

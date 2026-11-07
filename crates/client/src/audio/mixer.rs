@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use corddis_proto::audio::{FRAME_MS, FRAME_SAMPLES};
 
+use super::agc::Limiter;
 use super::codec::Decoder;
 use super::jitter::{JitterBuffer, Playout};
 
@@ -17,6 +18,8 @@ const MIN_TARGET_FRAMES: usize = 2;
 const MAX_TARGET_FRAMES: usize = 6;
 /// Bu kadar süredir paket gelmeyen konuşmacının çözücüsü bellekten atılır.
 const IDLE_FORGET: Duration = Duration::from_secs(30);
+/// Kişi başı ses düzeyi üst sınırı (%300); karışım sınırlayıcıdan geçtiği için cızırdamaz.
+pub const MAX_VOLUME: f32 = 3.0;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SpeakerStats {
@@ -42,11 +45,12 @@ pub struct Mixer {
     speakers: HashMap<u16, Speaker>,
     volumes: HashMap<u16, f32>,
     decoded: [f32; FRAME_SAMPLES],
+    limiter: Limiter,
 }
 
 impl Default for Mixer {
     fn default() -> Self {
-        Self { epoch: Instant::now(), speakers: HashMap::new(), volumes: HashMap::new(), decoded: [0.0; FRAME_SAMPLES] }
+        Self { epoch: Instant::now(), speakers: HashMap::new(), volumes: HashMap::new(), decoded: [0.0; FRAME_SAMPLES], limiter: Limiter::default() }
     }
 }
 
@@ -54,18 +58,6 @@ impl Default for Mixer {
 fn target_for(jitter_ms: f64) -> usize {
     let ms = FRAME_MS as f64 + 3.0 * jitter_ms;
     ((ms / FRAME_MS as f64).ceil() as usize).clamp(MIN_TARGET_FRAMES, MAX_TARGET_FRAMES)
-}
-
-/// 0.8'e kadar doğrusal, üstünde yumuşak sınırlama (birden fazla kişi aynı anda bağırınca
-/// sert kırpma/cızırtı olmasın).
-fn soft_clip(x: f32) -> f32 {
-    const KNEE: f32 = 0.8;
-    let a = x.abs();
-    if a <= KNEE {
-        x
-    } else {
-        x.signum() * (KNEE + (1.0 - KNEE) * ((a - KNEE) / (1.0 - KNEE)).tanh())
-    }
 }
 
 impl Mixer {
@@ -110,7 +102,7 @@ impl Mixer {
     }
 
     pub fn set_volume(&mut self, id: u16, volume: f32) {
-        self.volumes.insert(id, volume.clamp(0.0, 2.0));
+        self.volumes.insert(id, volume.clamp(0.0, MAX_VOLUME));
     }
 
     /// 20 ms'lik karışım üretir. Kimse konuşmuyorsa `false` döner (çıktı sıfırlanır).
@@ -152,7 +144,7 @@ impl Mixer {
             self.speakers.remove(&id);
         }
         if any {
-            out.iter_mut().for_each(|x| *x = soft_clip(*x));
+            self.limiter.process(out);
         }
         Ok(any)
     }
@@ -196,13 +188,6 @@ mod tests {
         assert_eq!(target_for(10.0), 3);
         assert_eq!(target_for(30.0), 6);
         assert_eq!(target_for(500.0), MAX_TARGET_FRAMES);
-    }
-
-    #[test]
-    fn soft_clip_is_transparent_below_knee_and_bounded() {
-        assert_eq!(soft_clip(0.5), 0.5);
-        assert!(soft_clip(5.0) <= 1.0 && soft_clip(5.0) > 0.8);
-        assert_eq!(soft_clip(-5.0), -soft_clip(5.0));
     }
 
     #[test]

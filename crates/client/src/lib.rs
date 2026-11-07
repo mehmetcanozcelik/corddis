@@ -14,6 +14,7 @@ pub mod model;
 pub mod net;
 pub mod netloop;
 pub mod platform;
+pub mod tray;
 pub mod voice;
 
 use audio::capture::CaptureSettings;

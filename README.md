@@ -11,13 +11,16 @@ Arkadaş grubu için oyun dostu sesli/yazılı sohbet. Tasarım ve yol haritası
 
 | | |
 |---|---|
-| 🎤 | Mikrofonu aç/kapat. Oyun içindeyken: **Ctrl+Shift+M** |
+| 🎤 | Mikrofonu aç/kapat. Oyun içindeyken: **Ctrl+Shift+M** (kapatınca/açınca kısa bir ses çıkar) |
 | 🎧 | Sağır modu (kimseyi duymazsınız, konuşamazsınız) |
-| ⚙ | Mikrofon/kulaklık seçimi, ses algılama eşiği, gürültü engelleme |
-| Sağ tık (kişi) | O kişinin ses düzeyi (%0–200) |
+| ⚙ | Mikrofon/kulaklık seçimi, ses algılama eşiği, gürültü engelleme, otomatik ses seviyesi, bildirim sesleri |
+| Sağ tık (kişi) | O kişinin ses düzeyi (%0–300) |
 | Ayrıl | Sesli kanaldan çık |
+| Pencereyi kapat (✕) | Uygulama **tepside** (saatin yanı) çalışmaya devam eder, sesli kanaldan düşmezsiniz. Tepsi ikonuna sol tık: pencereyi aç; sağ tık: mikrofon / çıkış |
 
 **Sesim gitmiyor / boşuna açılıyor:** ⚙ → Ses algılama. Konuşurken çubuk sarı çizgiyi geçmeli, sessizken geçmemeli; eşiği buna göre kaydırın.
+
+**Arkadaşım kısık geliyor:** Onun ⚙ ayarlarında *Otomatik ses seviyesi* açık olmalı (varsayılan açık; kısık mikrofonu +24 dB'e kadar yükseltir). Ayrıca o kişiye sağ tıklayıp %300'e kadar açabilirsiniz.
 
 Ayarlar `%APPDATA%\Corddis\config.json` dosyasında durur.
 
@@ -62,3 +65,8 @@ Aynı bilgisayarda ikinci bir hesapla denemek için `CORDDIS_CONFIG_DIR` ortam d
 | `crates/client` | İstemci kütüphanesi (ses hattı, ağ, model, arayüz) + `corddis` ve `corddis-cli` |
 | `crates/server` | Sunucu: TLS + WebSocket, SQLite, UDP ses relay'i, yönetim komutları. Uçtan uca testler `crates/server/tests` |
 | `deploy` | systemd servisi, yönetim ve yedek betikleri, Oracle kurulum rehberi |
+
+## Lisanslar
+
+Uygulama ikonu, [egui/eframe](https://github.com/emilk/egui) projesinin varsayılan ikonudur (MIT veya Apache-2.0).
+Bildirim sesleri kodda üretilir; dosya kullanılmaz.
