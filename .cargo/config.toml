@@ -1,0 +1,4 @@
+[env]
+# libopus'un gömülü CMakeLists dosyası eski bir cmake_minimum_required kullanıyor;
+# CMake 4.x bunu reddediyor. Bu ayar eski sürüm uyumluluğunu açar.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"

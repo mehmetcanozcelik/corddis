@@ -1,0 +1,4 @@
+#!/bin/sh
+# Sunucu üzerinde yönetim komutlarını doğru kullanıcı ve veri klasörüyle çalıştırır.
+# Örnek: corddis-admin user add Ali --host 1.2.3.4
+exec sudo -u corddis env CORDDIS_DATA=/var/lib/corddis /opt/corddis/corddis-server "$@"

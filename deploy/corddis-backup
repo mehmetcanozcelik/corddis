@@ -1,0 +1,9 @@
+#!/bin/sh
+# Günlük yedek: veritabanı (haftanın günü numarasıyla, son 7 gün) + sunucu sertifikası.
+# /etc/cron.d/corddis-backup tarafından her gün 04:00'te (UTC) root olarak çalıştırılır.
+set -e
+DIR=/var/backups/corddis
+mkdir -p "$DIR"
+chmod 700 "$DIR"
+sqlite3 /var/lib/corddis/corddis.db ".backup $DIR/corddis-$(date +%u).db"
+cp /var/lib/corddis/cert.der /var/lib/corddis/key.der "$DIR/"

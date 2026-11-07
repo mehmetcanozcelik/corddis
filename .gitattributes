@@ -1,0 +1,3 @@
+# Linux'ta çalışacak dosyalar her zaman LF kalmalı (CRLF, shebang'i bozar).
+deploy/* text eol=lf
+*.rs text eol=lf
