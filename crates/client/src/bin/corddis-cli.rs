@@ -56,6 +56,16 @@ fn run() -> Result<()> {
             parse_options(args, &mut audio, None)?;
             chat::run(&invite, audio)
         }
+        "set-invite" => {
+            // Arayüzün davet ekranını atlamak için (test/kurulum). CORDDIS_CONFIG_DIR'e uyar.
+            let invite = args.first().context("davet bağlantısı gerekli")?;
+            invite.parse::<corddis_proto::invite::Invite>()?;
+            let mut cfg = corddis_client::config::Config::load();
+            cfg.set_invite(Some(invite));
+            cfg.save();
+            println!("Davet kaydedildi.");
+            Ok(())
+        }
         _ => {
             print!("{HELP}");
             Ok(())

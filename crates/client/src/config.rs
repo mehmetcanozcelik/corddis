@@ -41,8 +41,13 @@ impl Default for Config {
     }
 }
 
+/// `CORDDIS_CONFIG_DIR` verilirse o klasör kullanılır (aynı bilgisayarda ikinci hesapla test için).
 fn path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("APPDATA")?).join("Corddis").join("config.json"))
+    let dir = match std::env::var_os("CORDDIS_CONFIG_DIR") {
+        Some(d) => PathBuf::from(d),
+        None => PathBuf::from(std::env::var_os("APPDATA")?).join("Corddis"),
+    };
+    Some(dir.join("config.json"))
 }
 
 impl Config {

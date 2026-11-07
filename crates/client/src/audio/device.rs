@@ -36,6 +36,18 @@ pub fn list_devices() -> Result<()> {
     Ok(())
 }
 
+/// Ayarlar menüsü için (mikrofonlar, çıkışlar).
+pub fn names() -> (Vec<String>, Vec<String>) {
+    let host = cpal::default_host();
+    let list = |it: Result<Box<dyn Iterator<Item = Device>>, cpal::DevicesError>| -> Vec<String> {
+        it.map(|i| i.filter_map(|d| d.name().ok()).collect()).unwrap_or_default()
+    };
+    (
+        list(host.input_devices().map(|i| Box::new(i) as Box<dyn Iterator<Item = Device>>)),
+        list(host.output_devices().map(|i| Box::new(i) as Box<dyn Iterator<Item = Device>>)),
+    )
+}
+
 fn describe(c: &cpal::SupportedStreamConfig) -> String {
     format!("{} Hz, {} kanal, {:?}", c.sample_rate().0, c.channels(), c.sample_format())
 }

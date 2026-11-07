@@ -2,3 +2,8 @@
 # libopus'un gömülü CMakeLists dosyası eski bir cmake_minimum_required kullanıyor;
 # CMake 4.x bunu reddediyor. Bu ayar eski sürüm uyumluluğunu açar.
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+
+# C çalışma zamanını exe'nin içine göm: arkadaşların bilgisayarında
+# "VCRUNTIME140.dll bulunamadı" hatası çıkmasın, ek kurulum gerekmesin.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
